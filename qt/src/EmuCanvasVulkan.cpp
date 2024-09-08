@@ -124,6 +124,8 @@ bool EmuCanvasVulkan::createContext()
 
     tryLoadShader();
 
+    context->wait_idle();
+
     QGuiApplication::sync();
     paintEvent(nullptr);
 
@@ -177,6 +179,8 @@ void EmuCanvasVulkan::draw()
     if (!window->isVisible())
         return;
 
+    context->swapchain->set_vsync(config->enable_vsync);
+
     if (S9xImGuiDraw(width() * devicePixelRatioF(), height() * devicePixelRatioF()))
     {
         auto draw_data = ImGui::GetDrawData();
@@ -201,11 +205,10 @@ void EmuCanvasVulkan::draw()
     if (retval)
     {
         throttle();
-        context->swapchain->set_vsync(config->enable_vsync);
         context->swapchain->swap();
         if (config->reduce_input_lag)
         {
-            context->swapchain->wait_on_frames();
+            context->wait_idle();
         }
     }
 }
@@ -256,13 +259,6 @@ void EmuCanvasVulkan::paintEvent(QPaintEvent *event)
         }
         return;
     }
-
-    // Clear to black
-    uint8_t buffer[] = { 0, 0, 0, 0 };
-    if (shader_chain)
-        shader_chain->do_frame(buffer, 1, 1, 1, vk::Format::eR5G6B5UnormPack16, 0, 0, width(), height());
-    if (simple_output)
-        simple_output->do_frame(buffer, 1, 1, 1, 0, 0, width(), height());
 }
 
 void EmuCanvasVulkan::deinit()

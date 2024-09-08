@@ -1,15 +1,17 @@
 #include "vulkan_swapchain.hpp"
+#include "vulkan_context.hpp"
 
 namespace Vulkan
 {
 
-Swapchain::Swapchain(vk::Device device_, vk::PhysicalDevice physical_device_, vk::Queue queue_, vk::SurfaceKHR surface_, vk::CommandPool command_pool_)
-    : surface(surface_),
-      command_pool(command_pool_),
-      physical_device(physical_device_),
-      queue(queue_)
+Swapchain::Swapchain(Context &context_)
+    : context(context_)
 {
-    device = device_;
+    device = context.device;
+    queue = context.queue;
+    surface = context.surface.get();
+    physical_device = context.physical_device;
+    command_pool = context.command_pool.get();
     create_render_pass();
     end_render_pass_function = nullptr;
 }
@@ -20,7 +22,12 @@ Swapchain::~Swapchain()
 
 void Swapchain::set_vsync(bool new_setting)
 {
-    vsync = new_setting;
+    if (vsync != new_setting)
+    {
+        vsync = new_setting;
+        if (swapchain_object)
+            recreate();
+    }
 }
 
 void Swapchain::on_render_pass_end(std::function<void ()> function)
@@ -78,7 +85,6 @@ bool Swapchain::recreate(int new_width, int new_height)
     if (swapchain_object)
     {
         device.waitIdle();
-        wait_on_frames();
     }
 
     return create(num_swapchain_images, new_width, new_height);
@@ -267,8 +273,6 @@ bool Swapchain::create_resources()
             .setLayers(1)
             .setRenderPass(render_pass.get());
         image.framebuffer = device.createFramebufferUnique(framebuffer_create_info).value;
-
-        image.fence = device.createFenceUnique(fence_create_info).value;
     }
 
     current_swapchain_image = 0;
@@ -348,16 +352,6 @@ bool Swapchain::swap()
         .setSwapchains(swapchain_object.get())
         .setImageIndices(current_swapchain_image);
 
-    vk::SwapchainPresentModeInfoEXT present_mode_info;
-    auto present_mode = get_present_mode();
-    present_mode_info.setPresentModes(present_mode);
-    present_info.setPNext(&present_mode_info);
-
-    auto &present_fence = image_data[current_swapchain_image].fence.get();
-    device.resetFences(present_fence);
-    vk::SwapchainPresentFenceInfoEXT present_fence_info(present_fence);
-    present_mode_info.setPNext(&present_fence_info);
-
     vk::Result result = queue.presentKHR(present_info);
     if (result == vk::Result::eErrorOutOfDateKHR)
     {
@@ -412,18 +406,6 @@ void Swapchain::end_render_pass()
     }
 
     get_cmd().endRenderPass();
-}
-
-bool Swapchain::wait_on_frame(int frame_num)
-{
-    auto result = device.waitForFences({ image_data[frame_num].fence.get() }, true, 33000000);
-    return (result == vk::Result::eSuccess);
-}
-
-void Swapchain::wait_on_frames()
-{
-    for (auto i = 0; i < image_data.size(); i++)
-        wait_on_frame(i);
 }
 
 vk::Extent2D Swapchain::get_extents()

@@ -224,29 +224,32 @@ bool Context::init_device(int preferred_device)
     };
 
     auto device_list = instance->enumeratePhysicalDevices().value;
-    physical_device = nullptr;
+    bool device_chosen = false;
+    physical_device = vk::PhysicalDevice();
 
     if (preferred_device > -1 &&
         (size_t)preferred_device < device_list.size() &&
         check_extensions(required_extensions, device_list[preferred_device]))
     {
         physical_device = device_list[preferred_device];
+        device_chosen = true;
     }
 
-    if (physical_device == nullptr)
+    if (!device_chosen)
     {
         for (auto &device : device_list)
         {
             if (check_extensions(required_extensions, device))
             {
                 physical_device = device;
+                device_chosen = true;
                 break;
             }
         }
     }
 
-    auto extension_properties = physical_device.enumerateDeviceExtensionProperties().value;
-    physical_device.getProperties(&physical_device_props);
+    if (!device_chosen)
+        return false;
 
     graphics_queue_family_index = find_graphics_queue(physical_device);
     if (graphics_queue_family_index == UINT32_MAX)
@@ -289,7 +292,7 @@ bool Context::init_vma()
 bool Context::create_swapchain(int width, int height)
 {
     wait_idle();
-    swapchain = std::make_unique<Swapchain>(device, physical_device, queue, surface.get(), command_pool.get());
+    swapchain = std::make_unique<Swapchain>(*this);
     return swapchain->create(2, width, height);
 }
 
